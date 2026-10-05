@@ -2889,7 +2889,7 @@ function renderResult(){
       ${state.saved ? `<button class="btn primary" disabled>已自动保存并提交 ✓</button>` : (profileComplete() ? `<button class="btn primary" data-act="save">提交并保存数据</button>` : `<button class="btn primary" disabled>未填写个人信息，本次结果不提交</button>`)}
     </div>
     <div class="btns">
-      <button class="btn primary" data-act="share">📷 生成分享图（带二维码）</button>
+      <button class="btn primary" data-act="share">📷 生成分享图（长按保存）</button>
     </div>
     ${state.saved ? `<p style="text-align:center; font-size:12px; margin-top:12px;">你的作答已匿名保存，仅用于课程社会调查</p>` : ''}
     <div class="btns"><button class="btn primary" data-act="poster">领取安全小贴士 →</button></div>
@@ -3209,15 +3209,21 @@ function makeShareCanvas(r){
   const F = '"Microsoft YaHei","PingFang SC","SimHei",sans-serif';
   const CX = W/2;
 
-  ctx.fillStyle = '#151520';
+  // 蓝白渐变背景（与页面主色调一致）
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#5c94fc');
+  bg.addColorStop(.62, '#5c94fc');
+  bg.addColorStop(1, '#3b7ef0');
+  ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#0b6670';
+  // 顶部墨色边条
+  ctx.fillStyle = '#151520';
   ctx.fillRect(0, 0, W, 12);
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
 
-  ctx.fillStyle = '#fcb000';
+  ctx.fillStyle = '#ffffff';
   ctx.font = '700 26px ' + F;
   ctx.fillText('习概课 · 社会调查', CX, 62);
 
@@ -3226,15 +3232,19 @@ function makeShareCanvas(r){
   ctx.fillText('测测你的网上冲浪段位', CX, 122);
 
   const sprCol = ['#00a800','#fcb000','#3b66e2','#e52521'][r.form];
-  ctx.fillStyle = sprCol;
   ctx.font = '64px ' + F;
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineJoin = 'round';
+  ctx.strokeText(TYPE_KAO[r.dom][r.form], CX, 202);
+  ctx.fillStyle = sprCol;
   ctx.fillText(TYPE_KAO[r.dom][r.form], CX, 202);
 
   ctx.fillStyle = '#ffffff';
   ctx.font = '700 40px ' + F;
   ctx.fillText(TYPE_NAMES[r.dom][r.form], CX, 262);
 
-  ctx.fillStyle = '#c9c9dc';
+  ctx.fillStyle = 'rgba(255,255,255,.92)';
   ctx.font = '24px ' + F;
   const descLines = wrapLines(ctx, TYPE_DESC[r.dom][r.form], W-120);
   let y = 302;
@@ -3242,50 +3252,50 @@ function makeShareCanvas(r){
 
   const fun = funTitle(r);
   const cardX = 60, cardY = y + 14, cardW = W-120, cardH = 136;
-  ctx.fillStyle = '#2a2a3e';
+  ctx.fillStyle = '#fffdf0';
   roundRectPath(ctx, cardX, cardY, cardW, cardH, 16);
   ctx.fill();
-  ctx.strokeStyle = '#3f3f5c';
-  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#151520';
+  ctx.lineWidth = 4;
   ctx.stroke();
   ctx.fillStyle = '#ff7a1a';
   ctx.font = '700 22px ' + F;
   ctx.fillText('互联网防坑段位', CX, cardY + 40);
-  ctx.fillStyle = '#ffd6b0';
+  ctx.fillStyle = '#e52521';
   ctx.font = '700 38px ' + F;
   ctx.fillText(fun.level, CX, cardY + 86);
-  ctx.fillStyle = '#c9c9dc';
+  ctx.fillStyle = '#5b5b70';
   ctx.font = '22px ' + F;
   ctx.fillText(fun.joke, CX, cardY + 122);
 
   let by = cardY + cardH + 28;
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#fcb000';
+  ctx.fillStyle = '#ffffff';
   ctx.font = '700 22px ' + F;
   ctx.fillText('你的「知」与「行」', 60, by);
   by += 30;
   function bar(label, val, color){
-    ctx.fillStyle = '#c9c9dc';
+    ctx.fillStyle = '#ffffff';
     ctx.font = '21px ' + F;
     ctx.fillText(label + '  ' + val.toFixed(1) + '/4', 60, by);
     const bx = 60, bw = W-120, bh = 18;
     const bty = by + 12;
-    ctx.fillStyle = '#3f3f5c';
+    ctx.fillStyle = 'rgba(255,255,255,.4)';
     roundRectPath(ctx, bx, bty, bw, bh, 9); ctx.fill();
     const pct = Math.max(0, Math.min(1, val/4));
     ctx.fillStyle = color;
     if(pct > 0){ roundRectPath(ctx, bx+4, bty+4, (bw-8)*pct, bh-8, 6); ctx.fill(); }
     by += 64;
   }
-  bar('认知（知道该怎么做）', r.C, '#3b7ef0');
+  bar('认知（知道该怎么做）', r.C, '#151520');
   bar('行动（最可能怎么做）', r.A, '#ff7a1a');
   ctx.textAlign = 'center';
 
-  ctx.fillStyle = '#fcb000';
+  ctx.fillStyle = '#ffffff';
   ctx.font = '700 22px ' + F;
   ctx.fillText('三维度得分', CX, by);
   by += 30;
-  const dimColors = ['#e52521','#00a800','#3b66e2'];
+  const dimColors = ['#e52521','#00a800','#ffffff'];
   const colXs = [165, 375, 585];
   for(let d=0; d<3; d++){
     ctx.fillStyle = dimColors[d];
@@ -3297,11 +3307,11 @@ function makeShareCanvas(r){
   }
   by += 96;
 
-  ctx.fillStyle = '#fcb000';
+  ctx.fillStyle = '#ffffff';
   ctx.font = '700 22px ' + F;
   ctx.fillText('给 TA 的一条建议', CX, by);
   by += 28;
-  ctx.fillStyle = '#e8e8f0';
+  ctx.fillStyle = 'rgba(255,255,255,.95)';
   ctx.font = '23px ' + F;
   const advLines = wrapLines(ctx, buildAdvice(r), W-100);
   for(const l of advLines){ ctx.fillText(l, CX, by); by += 32; }
@@ -3311,13 +3321,16 @@ function makeShareCanvas(r){
   const qrX = (W - qrSize)/2;
   ctx.fillStyle = '#ffffff';
   roundRectPath(ctx, qrX-20, by-20, qrSize+40, qrSize+40, 18); ctx.fill();
+  ctx.strokeStyle = '#151520';
+  ctx.lineWidth = 4;
+  roundRectPath(ctx, qrX-20, by-20, qrSize+40, qrSize+40, 18); ctx.stroke();
   drawQRInto(ctx, qrX, by, qrSize);
   by += qrSize + 46;
   ctx.fillStyle = '#ffffff';
   ctx.font = '700 26px ' + F;
   ctx.fillText('扫码 / 长按识别 · 测测你的段位', CX, by);
   by += 34;
-  ctx.fillStyle = '#8b8ba3';
+  ctx.fillStyle = 'rgba(255,255,255,.85)';
   ctx.font = '20px ' + F;
   ctx.fillText('匿名作答 · 数据仅用于课程社会调查', CX, by);
 
@@ -3326,23 +3339,46 @@ function makeShareCanvas(r){
 
 function downloadShare(){
   if(!state.result){ toast('先完成测试再生成分享图哦'); return; }
+  let dataUrl;
   try{
-    const c = makeShareCanvas(state.result);
-    c.toBlob(blob=>{
-      if(!blob){ toast('生成失败，换个浏览器试试'); return; }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = '我的网上冲浪段位.png';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url), 3000);
-      toast('分享图已生成，快去转发吧');
-    }, 'image/png');
+    dataUrl = makeShareCanvas(state.result).toDataURL('image/png');
   }catch(e){
     toast('生成失败：' + e.message);
+    return;
   }
+  openSharePreview(dataUrl);
+}
+
+function openSharePreview(dataUrl){
+  const old = document.getElementById('sharePreview');
+  if(old) old.remove();
+
+  const ov = document.createElement('div');
+  ov.id = 'sharePreview';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(21,21,32,.82);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto;';
+  ov.innerHTML =
+    '<div style="background:#fffdf0;border:4px solid #151520;box-shadow:8px 8px 0 rgba(0,0,0,.35);padding:18px;max-width:520px;width:100%;text-align:center;border-radius:12px;">' +
+      '<div style="font-weight:700;font-size:16px;color:#151520;margin-bottom:10px;">长按图片，保存到相册</div>' +
+      '<img src="' + dataUrl + '" alt="分享图" style="width:100%;display:block;border:3px solid #151520;border-radius:6px;" />' +
+      '<div style="margin-top:10px;color:#5b5b70;font-size:12.5px;line-height:1.6;">微信内：长按上方图片 → 保存图片<br>浏览器内：可长按/右键保存，或点下方按钮直接下载</div>' +
+      '<div style="display:flex;gap:10px;margin-top:12px;">' +
+        '<button id="shareDl" style="flex:1;border:3px solid #151520;background:#5c94fc;color:#fff;padding:11px;font-size:14px;cursor:pointer;border-radius:8px;font-weight:700;">⬇ 下载图片</button>' +
+        '<button id="shareClose" style="flex:1;border:3px solid #151520;background:#fff;color:#151520;padding:11px;font-size:14px;cursor:pointer;border-radius:8px;font-weight:700;">关 闭</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(ov);
+
+  document.getElementById('shareClose').onclick = function(){ ov.remove(); };
+  document.getElementById('shareDl').onclick = function(){
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = '我的网上冲浪段位.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    toast('图片已下载');
+  };
+  ov.addEventListener('click', function(e){ if(e.target === ov) ov.remove(); });
 }
 
 /* 启动 */
