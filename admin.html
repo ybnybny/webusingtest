@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数据分析后台 · 测测你的网上冲浪段位</title>
+<!--
+  数据分析后台（单文件，无后端服务器，数据存 Supabase）：
+  · 用 Supabase Auth 账号密码登录后，拉取作答页匿名提交到线上的全部数据。
+  · 未配置 / 未登录时，可「本地离线预览」读取本机 localStorage 数据（仅演示 / 调试用）。
+  · 线上模式支持导出 CSV / JSON、清空线上数据；本地模式支持导入 JSON、生成示例数据。
+-->
+<style>
+:root{
+  --bd:#151520; --ink:#151520; --muted:#5b5b70;
+  --sky:#5c94fc; --sky2:#3b7ef0; --card:#fffdf0; --line:#e6e0c8;
+  --sea:#0b6670; --sea2:#063a42;
+  --accent:#e52521; --accent2:#3b66e2; --accent3:#fcb000; --accent4:#00a800;
+  --act:#ff7a1a; --ok:#00a800; --warn:#fcb000; --bad:#e52521;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0; padding:0;}
+body{
+  font-family:'Microsoft YaHei','PingFang SC','SimHei',sans-serif;
+  background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.05) 0 2px, rgba(255,255,255,0) 2px 4px),
+    linear-gradient(180deg, var(--sky) 0 62%, var(--sky2) 62% 100%);
+  color:var(--ink); min-height:100vh; padding:26px 14px 60px; overflow-x:hidden;
+}
+body::after{ content:''; position:fixed; left:0; right:0; bottom:0; height:22px; z-index:0;
+  background:repeating-linear-gradient(90deg,var(--sea) 0 22px,var(--sea2) 22px 44px);
+  border-top:4px solid var(--bd); }
+#app{width:100%; max-width:1020px; margin:0 auto; position:relative; z-index:1;}
+header{ text-align:center; margin-bottom:16px; color:#fff; text-shadow:2px 2px 0 rgba(0,0,0,.35); }
+header h1{ margin:0 0 6px; font-size:26px; letter-spacing:1px; }
+header .sub{ font-size:13px; opacity:.92; }
+.card{ background:var(--card); border:4px solid var(--bd); padding:20px; box-shadow:8px 8px 0 rgba(0,0,0,.5); }
+.toolbar{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:16px 0 22px; }
+.btn{ font-family:inherit; font-size:14px; font-weight:700; cursor:pointer;
+  border:3px solid var(--bd); background:#fff; color:var(--ink); padding:9px 14px;
+  box-shadow:4px 4px 0 rgba(0,0,0,.5); transition:transform .05s; }
+.btn:active{ transform:translate(2px,2px); box-shadow:2px 2px 0 rgba(0,0,0,.5); }
+.btn.primary{ background:var(--sea); color:#fff; }
+.btn.warn{ background:var(--bad); color:#fff; }
+.btn.ghost{ background:#fff; }
+.hint{ text-align:center; font-size:12.5px; color:rgba(255,255,255,.92); margin-bottom:14px; text-shadow:1px 1px 0 rgba(0,0,0,.3); }
+.hint b{ color:#fff; }
+.sec{ margin-top:20px; }
+.sec-h{ display:flex; align-items:center; gap:10px; font-size:17px; font-weight:700; color:#fff; margin:0 0 10px; text-shadow:2px 2px 0 rgba(0,0,0,.35); }
+.sec-h .bar-deco{ width:10px; height:18px; background:var(--accent3); border:2px solid var(--bd); box-shadow:2px 2px 0 rgba(0,0,0,.4); }
+.grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(215px,1fr)); gap:14px; }
+.stat{ background:var(--card); border:4px solid var(--bd); padding:16px 16px 14px; box-shadow:6px 6px 0 rgba(0,0,0,.45); }
+.stat .k{ font-size:12.5px; color:var(--muted); margin-bottom:6px; }
+.stat .v{ font-size:26px; font-weight:800; line-height:1; }
+.stat .u{ font-size:12px; color:var(--muted); margin-top:4px; }
+.rows{ display:flex; flex-direction:column; gap:10px; }
+.bar-row{ display:grid; grid-template-columns:108px 1fr 64px; align-items:center; gap:10px; font-size:13.5px; }
+.bar-row .lbl{ text-align:right; color:var(--ink); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bar-track{ background:#efe8cf; border:2px solid var(--bd); height:20px; position:relative; }
+.bar-fill{ height:100%; transition:width .4s; }
+.bar-row .val{ font-weight:800; }
+.two{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+@media (max-width:720px){ .two{ grid-template-columns:1fr; } .bar-row{ grid-template-columns:88px 1fr 52px; } }
+.donut-wrap{ display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+.legend{ display:flex; flex-direction:column; gap:7px; font-size:13px; }
+.legend .li{ display:flex; align-items:center; gap:8px; }
+.sw{ width:14px; height:14px; border:2px solid var(--bd); display:inline-block; }
+.tbl{ width:100%; border-collapse:collapse; font-size:13px; background:var(--card); border:3px solid var(--bd); }
+.tbl th,.tbl td{ border:1px solid var(--line); padding:7px 8px; text-align:center; }
+.tbl th{ background:var(--sea); color:#fff; font-size:12.5px; }
+.tbl td{ background:#fffdf0; }
+.tbl td.l{ text-align:left; font-weight:700; }
+.heat{ display:grid; grid-template-columns:86px repeat(4,1fr); gap:6px; }
+.heat .hcell{ border:3px solid var(--bd); min-height:64px; padding:8px 6px; text-align:center; background:var(--card);
+  display:flex; flex-direction:column; justify-content:center; box-shadow:3px 3px 0 rgba(0,0,0,.35); }
+.heat .hcell .t{ font-size:12.5px; font-weight:800; }
+.heat .hcell .n{ font-size:12px; color:var(--muted); margin-top:2px; }
+.heat .hhead{ display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:800; color:var(--ink); }
+.heat .rh{ display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; color:var(--ink); }
+.report{ background:var(--card); border:4px solid var(--bd); padding:20px 22px; box-shadow:8px 8px 0 rgba(0,0,0,.5);
+  font-size:14.5px; line-height:1.9; }
+.report h3{ margin:18px 0 6px; font-size:15.5px; color:var(--sea); }
+.report h3:first-child{ margin-top:0; }
+.report p{ margin:6px 0; }
+.report .tag{ display:inline-block; background:var(--accent3); color:var(--ink); font-size:12px; font-weight:800;
+  padding:1px 8px; border:2px solid var(--bd); margin-right:6px; }
+.qlist{ font-size:12.5px; }
+.qlist .qrow{ display:grid; grid-template-columns:44px 1fr 64px; gap:8px; padding:6px 2px; border-bottom:1px dashed var(--line); align-items:center; }
+.qlist .qrow:last-child{ border-bottom:none; }
+.qlist .qid{ font-weight:800; color:var(--muted); }
+.qlist .qbar{ background:#efe8cf; border:2px solid var(--bd); height:14px; position:relative; }
+.qlist .qbar > div{ height:100%; background:var(--sea); }
+.qlist .qv{ text-align:right; font-weight:800; }
+.part-tag{ font-size:13px; font-weight:800; color:var(--sea); margin:12px 0 4px; }
+.empty{ text-align:center; padding:38px 16px; }
+.empty .kao{ font-size:34px; margin-bottom:10px; }
+footer{ text-align:center; color:rgba(255,255,255,.85); font-size:12px; margin-top:26px; text-shadow:1px 1px 0 rgba(0,0,0,.3); }
+.inp{ font-family:inherit; font-size:14px; padding:10px 12px; border:3px solid var(--bd); background:#fff; color:var(--ink); box-shadow:3px 3px 0 rgba(0,0,0,.3); width:100%; border-radius:0; }
+.inp:focus{ outline:none; border-color:var(--sea); }
+.loginrow{ display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
+.loginrow .inp{ flex:1 1 180px; }
+.loginbtns{ display:flex; flex-wrap:wrap; gap:10px; }
+.sessionbar{ gap:10px; }
+.sessionbar .btn{ padding:4px 10px; font-size:12.5px; box-shadow:2px 2px 0 rgba(0,0,0,.4); }
+</style>
+<script src="config.js"></script>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>数据分析后台</h1>
+    <div class="sub">《测测你的网上冲浪段位》· 大学生网络素养社会调查 · 数据自动整理</div>
+  </header>
+
+  <div id="loginBox" class="card" style="display:none;">
+    <h2 style="margin:0 0 6px; font-size:20px;">🔐 后台登录</h2>
+    <p style="color:var(--muted); margin:0 0 16px; font-size:13.5px;">用你在 Supabase 中创建的后台账号登录，才能查看线上收集的全部数据。</p>
+    <div class="loginrow">
+      <input class="inp" id="loginEmail" type="email" placeholder="后台邮箱" autocomplete="username">
+      <input class="inp" id="loginPass" type="password" placeholder="后台密码" autocomplete="current-password">
+    </div>
+    <div class="loginbtns">
+      <button class="btn primary" id="btnLogin">登录并加载线上数据</button>
+      <button class="btn" id="btnLocalPreview">本地离线预览</button>
+    </div>
+    <p id="loginErr" style="color:var(--bad); min-height:18px; margin:12px 0 0; font-size:13px;"></p>
+  </div>
+
+  <div id="sessionBar" class="hint sessionbar" style="display:none;"></div>
+
+  <div class="toolbar" id="toolbar" style="display:none;">
+    <button class="btn primary" id="btnRefresh">⟳ 刷新数据</button>
+    <button class="btn" id="btnCSV">导出 CSV</button>
+    <button class="btn" id="btnJSON">导出 JSON</button>
+    <button class="btn" id="btnImport">导入 JSON</button>
+    <button class="btn" id="btnSample">生成示例数据</button>
+    <button class="btn warn" id="btnClear">清空数据</button>
+  </div>
+  <div class="hint" id="modeHint" style="display:none;"></div>
+
+  <div id="board"></div>
+
+  <footer>数据仅用于课程社会调查 · 全部匿名 · 线上数据保存在你自己的 Supabase 项目中</footer>
+</div>
+<input type="file" id="importFile" accept=".json,application/json" hidden>
+
+<script>
+'use strict';
+/* ================= 常量（与作答页保持一致） ================= */
+const KEY = 'wj_records_v1';
+
+/* ================= Supabase 配置与运行状态 ================= */
+const SB_URL = String(window.SUPABASE_URL||'').trim();
+const SB_KEY = String(window.SUPABASE_ANON_KEY||'').trim();
+const SB_ON  = !!SB_URL && !!SB_KEY && !/YOUR-(PROJECT|ANON)/i.test(SB_URL+SB_KEY);
+let DATA = [];                 // 当前用于渲染的数据
+let MODE = 'login';            // 'login' | 'local' | 'remote'
+let SB_TOKEN = localStorage.getItem('sb_access_token') || '';
+let SB_EMAIL = localStorage.getItem('sb_email') || '';
+const DIM_NAMES = ['网络暴力','数据安全','舆情风险'];
+const FORM_NAMES = ['知行合一型','道理都懂型','直觉防护型','裸奔型'];
+const TYPE_NAMES = [
+  ['反网暴斗士','嘴炮守门员','护崽老母亲','键盘裸泳者'],
+  ['赛博洁癖','改密拖延症','人形防火墙','裸奔冲浪者'],
+  ['人间清醒','理中客·但手滑','吃瓜不站队','节奏放大器'],
+];
+const TAG_NAMES = { HS:'独自硬扛型', OB:'乐观冲浪者', AI:'拖延大师' };
+const DIM_COLOR = ['#e52521','#3b66e2','#fcb000'];
+const FORM_COLOR = ['#00a800','#3b66e2','#fcb000','#e52521'];
+const GRADES = ['大一','大二','大三','大四及以上','研究生'];
+const GENDERS = ['男','女','不愿透露'];
+const MAJORS = ['人文社科','理工','医学','经管','艺术','其他'];
+const HOURS = ['<2小时','2–4小时','4–6小时','>6小时'];
+const PLATFORMS = ['微博','抖音','B站','小红书','微信','知乎','贴吧','其他'];
+const EXP_OPTS = ['被网络暴力','信息泄露','被谣言波及','都没有'];
+const HELP_OPTS = ['没遇到过','谁都没求助','朋友','家人','老师','平台举报','警方'];
+const CHANNELS = ['朋友','家人','老师','平台举报','警方','都不求助'];
+
+/* 9 个场景（与作答页顺序一致） */
+const SCEN = [
+  { dim:2, lv:'抢课内幕风波', stem:'课程群传「内部抢课通道，转发三个群免费代抢」' },
+  { dim:2, lv:'深夜表白翻车', stem:'刷到「隔壁某高校深夜宿舍楼下表白翻车，有图有真相」' },
+  { dim:2, lv:'热搜一边倒', stem:'热搜上出现一边倒的舆论' },
+  { dim:0, lv:'私信轰炸', stem:'你自己收到带攻击性的私信/评论' },
+  { dim:0, lv:'校园墙风波', stem:'朋友被挂「校园墙」' },
+  { dim:0, lv:'班群围攻', stem:'群里一个素不相识的同学被围攻' },
+  { dim:1, lv:'权限与 Cookies', stem:'App 申请权限、网站提示 Cookies' },
+  { dim:1, lv:'公共 WiFi 购物', stem:'在图书馆/咖啡店连公共 WiFi 下单付款' },
+  { dim:1, lv:'免费会员陷阱', stem:'资源群里发来「免费领会员」的小链接' },
+];
+const FACTORS = [
+  ['OB','同学群转来「某 App 被曝泄露隐私、学生信息可能外泄」的新闻，你的第一反应更接近？'],
+  ['OB','你发在校园墙/微博的吐槽突然爆火、引发争议，你第一反应是？'],
+  ['AI','说到给教务系统、常用 App 开二次验证、设不同密码，你的情况更接近？'],
+  ['AI','期末前刷到一篇「大学生网络防骗指南」，你的处理更接近？'],
+  ['HS','如果你遇到被挂校园墙或网络诈骗，你的第一反应更接近？'],
+  ['HS','同学主动问起「你是不是遇到麻烦了」，你会？'],
+];
+/* 题目元数据（仅用于均分表，不含选项/剧情全文） */
+const QMETA = [];
+QMETA.push({ id:'q1', part:1, title:'你的冲浪速度是？' });
+QMETA.push({ id:'q2', part:1, title:'你最怕哪种「网络社死」？' });
+SCEN.forEach((s,i)=> QMETA.push({ id:'q'+(3+i), part:1, dim:s.dim, track:'act', lv:s.lv, title:s.stem+'，你最可能怎么做？' }));
+FACTORS.forEach(([f,t],i)=> QMETA.push({ id:'q'+(12+i), part:1, factor:f, title:t }));
+SCEN.forEach((s,i)=> QMETA.push({ id:'q'+(18+i), part:2, dim:s.dim, track:'cog', lv:s.lv, title:'「'+s.lv+'」你会建议阿卷怎么做？' }));
+QMETA.push({ id:'q27', part:1, kind:'range', title:'给自己的网络安全习惯打几分？（0–10）' });
+
+/* ================= 数据访问 ================= */
+function getRecords(){
+  try{ const raw = localStorage.getItem(KEY); const a = raw ? JSON.parse(raw) : []; return Array.isArray(a) ? a : []; }
+  catch(e){ return []; }
+}
+function setRecords(a){ localStorage.setItem(KEY, JSON.stringify(a)); }
+
+/* ================= Supabase 数据访问（Auth + REST） ================= */
+function sbBase(){ return SB_URL.replace(/\/+$/,'').replace(/\/rest\/v1$/,''); }
+function sbHeaders(){ return { apikey: SB_KEY, Authorization: 'Bearer ' + SB_TOKEN, 'Content-Type':'application/json' }; }
+async function sbLogin(email, pass){
+  const res = await fetch(sbBase() + '/auth/v1/token?grant_type=password', {
+    method:'POST', headers:{ apikey: SB_KEY, 'Content-Type':'application/json' },
+    body: JSON.stringify({ email, password: pass })
+  });
+  if(!res.ok){
+    let msg = '登录失败（'+res.status+'）';
+    try{ const j = JSON.parse(await res.text()); msg = j.msg || j.error_description || j.error || msg; }catch(e){}
+    throw new Error(msg);
+  }
+  const j = await res.json();
+  SB_TOKEN = j.access_token; SB_EMAIL = (j.user && j.user.email) || email;
+  localStorage.setItem('sb_access_token', SB_TOKEN);
+  localStorage.setItem('sb_email', SB_EMAIL);
+  if(j.refresh_token) localStorage.setItem('sb_refresh_token', j.refresh_token);
+}
+function sbLogout(){
+  SB_TOKEN=''; SB_EMAIL='';
+  localStorage.removeItem('sb_access_token'); localStorage.removeItem('sb_email'); localStorage.removeItem('sb_refresh_token');
+}
+async function sbFetchRows(){
+  const res = await fetch(sbBase() + '/rest/v1/responses?select=*&order=created_at.asc', { headers: sbHeaders() });
+  if(!res.ok){
+    let msg = '拉取数据失败（'+res.status+'）';
+    try{ const j = await res.json(); if(j && j.message) msg += '：'+j.message; }catch(e){}
+    throw new Error(msg);
+  }
+  const rows = await res.json();
+  return rows.map(r=>({ ts:r.ts, basic:r.basic||{}, answers:r.answers||{}, result:r.result||{} }));
+}
+async function sbDeleteAll(){
+  const res = await fetch(sbBase() + '/rest/v1/responses?id=neq.00000000-0000-0000-0000-000000000000',
+    { method:'DELETE', headers: Object.assign(sbHeaders(), { 'Prefer':'return=minimal' }) });
+  if(!res.ok) throw new Error('清空失败（'+res.status+'）');
+}
+
+/* ================= 工具 ================= */
+const $ = s => document.querySelector(s);
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function mean(a){ return a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0; }
+function num(v){ return (typeof v==='number' && isFinite(v)) ? v : null; }
+function fmt(x,d){ d = d===undefined ? 2 : d; return (x===null||x===undefined||isNaN(x)) ? '—' : Number(x).toFixed(d); }
+function pct(a,b){ return b>0 ? (a/b*100) : 0; }
+function freq(arr){
+  const m = new Map();
+  arr.forEach(x=>{ const k = String((x===null||x===undefined||x==='') ? '未填' : x); m.set(k,(m.get(k)||0)+1); });
+  return [...m.entries()];
+}
+function topFreq(arr){
+  const f = freq(arr); if(!f.length) return null;
+  f.sort((a,b)=>b[1]-a[1]); return f[0];
+}
+function topDesc(arr){
+  const f = freq(arr); if(!f.length) return null;
+  const mx = Math.max(...f.map(x=>x[1]));
+  return { names:f.filter(x=>x[1]===mx).map(x=>x[0]), pct:pct(mx, arr.length) };
+}
+function recVal(r, path){
+  let o = r; for(const k of path){ o = o && o[k]; if(o===undefined||o===null) return null; } return o;
+}
+/* 兼容两种存储格式：作答页存字符串（维度/形态名），示例数据可能存数字索引 */
+function domIdx(r){ const v = recVal(r,['result','dom']); return (typeof v==='number') ? v : DIM_NAMES.indexOf(v); }
+function formIdx(r){ const v = recVal(r,['result','form']); return (typeof v==='number') ? v : FORM_NAMES.indexOf(v); }
+function tagKeys(r){
+  const t = recVal(r,['result','tags']); if(!Array.isArray(t)) return [];
+  return t.map(x=>{
+    if(TAG_NAMES[x]!==undefined) return x;
+    return Object.keys(TAG_NAMES).find(k=>TAG_NAMES[k]===x);
+  }).filter(x=>x!==undefined && x!==null);
+}
+function dimsOf(recs){
+  return [0,1,2].map(d=>{
+    const vals = recs.map(r=>num(recVal(r,['result','D',d]))).filter(v=>v!==null);
+    return { d, name:DIM_NAMES[d], m:mean(vals), n:vals.length };
+  });
+}
+function factorStats(recs, f){
+  const vals = recs.map(r=>num(recVal(r,['result',f]))).filter(v=>v!==null);
+  const hi = vals.filter(v=>v>=6).length;
+  return { m:mean(vals), n:vals.length, hi, hiPct:pct(hi, vals.length) };
+}
+
+/* ================= 渲染主流程 ================= */
+function renderAll(){
+  const recs = DATA;
+  const board = $('#board');
+  if(!recs.length){
+    const tip = (MODE==='local')
+      ? '去作答页完成一份测试，或先点下面按钮生成示例数据用于演示。'
+      : '线上还没有作答数据。把测试链接发给同学，作答后数据会自动出现在这里。';
+    const btn = (MODE==='local')
+      ? `<button class="btn primary" id="emptySample">生成 20 条示例数据</button>`
+      : '';
+    board.innerHTML =
+      `<div class="card empty">
+         <div class="kao">(´･ω･\`)</div>
+         <h3 style="margin:4px 0 8px;">还没有数据</h3>
+         <p style="color:var(--muted); margin:0 0 16px;">${esc(tip)}</p>
+         ${btn}
+       </div>`;
+    const b = $('#emptySample'); if(b) b.addEventListener('click', ()=>{ genSamples(); DATA=getRecords(); renderAll(); });
+    return;
+  }
+  let html = '';
+  html += renderOverview(recs);
+  html += renderCore(recs);
+  html += renderTypes(recs);
+  html += renderFactors(recs);
+  html += renderBasic(recs);
+  html += renderCross(recs);
+  html += renderQuestions(recs);
+  html += renderReport(recs);
+  board.innerHTML = html;
+  drawDonut('donutForm', formItems(recs));
+}
+
+function secTitle(t, color){
+  return `<div class="sec-h"><span class="bar-deco" style="background:${color||'#fcb000'}"></span>${esc(t)}</div>`;
+}
+
+/* ================= 1. 总览 ================= */
+function renderOverview(recs){
+  const n = recs.length;
+  const Cs = recs.map(r=>num(recVal(r,['result','C']))).filter(v=>v!==null);
+  const As = recs.map(r=>num(recVal(r,['result','A']))).filter(v=>v!==null);
+  const Gs = recs.map(r=>num(recVal(r,['result','GAP']))).filter(v=>v!==null);
+  const self = recs.map(r=>num(recVal(r,['answers','q27']))).filter(v=>v!==null);
+  const ts = recs.map(r=>recVal(r,['ts'])).filter(v=>v).sort();
+  const range = ts.length ? (ts[0].slice(0,10)+' ～ '+ts[ts.length-1].slice(0,10)) : '—';
+  return `<div class="sec">
+    ${secTitle('① 数据总览')}
+    <div class="grid">
+      <div class="stat"><div class="k">有效作答数</div><div class="v">${n}</div><div class="u">份</div></div>
+      <div class="stat"><div class="k">作答时间范围</div><div class="v" style="font-size:15px;">${esc(range)}</div><div class="u">最早 / 最近</div></div>
+      <div class="stat"><div class="k">平均认知得分 C</div><div class="v">${fmt(mean(Cs))}</div><div class="u">满分 4 · 样本 ${Cs.length}</div></div>
+      <div class="stat"><div class="k">平均行动得分 A</div><div class="v">${fmt(mean(As))}</div><div class="u">满分 4 · 样本 ${As.length}</div></div>
+      <div class="stat"><div class="k">知行错位 GAP</div><div class="v" style="color:${mean(Gs)>=0.5?'var(--bad)':(mean(Gs)<=-0.5?'var(--accent2)':'var(--sea)')}">${fmt(mean(Gs))}</div><div class="u">= C − A（>0 懂多动少）</div></div>
+      <div class="stat"><div class="k">平均自评分</div><div class="v">${fmt(mean(self),1)}</div><div class="u">满分 10 · 样本 ${self.length}</div></div>
+    </div>
+  </div>`;
+}
+
+/* ================= 2. 核心指标 ================= */
+function formItems(recs){
+  const counts = [0,0,0,0];
+  recs.forEach(r=>{ const f = formIdx(r); if(f>=0 && f<=3) counts[f]++; });
+  return FORM_NAMES.map((name,i)=>({ name, v:counts[i], c:FORM_COLOR[i] }));
+}
+function renderCore(recs){
+  const items = formItems(recs);
+  const dims = dimsOf(recs);
+  const dmax = Math.max(...dims.map(d=>d.m), 0.01);
+  const Cs = recs.map(r=>num(recVal(r,['result','C']))).filter(v=>v!==null);
+  const As = recs.map(r=>num(recVal(r,['result','A']))).filter(v=>v!==null);
+  const cmax = 4, amax = 4;
+  const gapVals = recs.map(r=>num(recVal(r,['result','GAP']))).filter(v=>v!==null);
+  const gapGood = gapVals.filter(v=>Math.abs(v)<=0.5).length;
+  return `<div class="sec">
+    ${secTitle('② 核心指标：认知 · 行动 · 维度')}
+    <div class="two">
+      <div class="card">
+        <div class="sec-h" style="color:var(--sea); text-shadow:none;"><span class="bar-deco"></span>知行形态分布</div>
+        <div class="donut-wrap">
+          <canvas id="donutForm" width="150" height="150"></canvas>
+          <div class="legend">${items.map(it=>`<div class="li"><span class="sw" style="background:${it.c}"></span>${esc(it.name)} · <b>${it.v}</b> 人（${fmt(pct(it.v,recs.length),0)}%）</div>`).join('')}</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="sec-h" style="color:var(--sea); text-shadow:none;"><span class="bar-deco"></span>三维度防御得分（0–8）</div>
+        <div class="rows">
+          ${dims.map(d=>`
+            <div class="bar-row">
+              <div class="lbl">${esc(d.name)}</div>
+              <div class="bar-track"><div class="bar-fill" style="width:${fmt(d.m/dmax*100,0)}%;background:${DIM_COLOR[d.d]}"></div></div>
+              <div class="val">${fmt(d.m)}</div>
+            </div>`).join('')}
+        </div>
+        <div class="rows" style="margin-top:16px;">
+          <div class="bar-row">
+            <div class="lbl">认知 C</div>
+            <div class="bar-track"><div class="bar-fill" style="width:${fmt(mean(Cs)/cmax*100,0)}%;background:var(--sea)"></div></div>
+            <div class="val">${fmt(mean(Cs))}</div>
+          </div>
+          <div class="bar-row">
+            <div class="lbl">行动 A</div>
+            <div class="bar-track"><div class="bar-fill" style="width:${fmt(mean(As)/amax*100,0)}%;background:var(--act)"></div></div>
+            <div class="val">${fmt(mean(As))}</div>
+          </div>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0;">知行基本一致（|GAP|≤0.5）的受访者占 <b>${fmt(pct(gapGood,gapVals.length),0)}%</b></p>
+      </div>
+    </div>
+  </div>`;
+}
+function drawDonut(id, items){
+  const cv = document.getElementById(id); if(!cv) return;
+  const ctx = cv.getContext('2d');
+  const W=cv.width, H=cv.height, cx=W/2, cy=H/2, r=Math.min(W,H)/2-4, ir=r*0.56;
+  const total = items.reduce((s,x)=>s+x.v,0);
+  ctx.clearRect(0,0,W,H);
+  if(!total){
+    ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.strokeStyle='#e6e0c8'; ctx.lineWidth=r-ir; ctx.stroke();
+    ctx.fillStyle='#151520'; ctx.font='bold 18px "Microsoft YaHei"'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('0', cx, cy); return;
+  }
+  let a = -Math.PI/2;
+  items.forEach(it=>{
+    const ang = it.v/total*Math.PI*2;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,a,a+ang); ctx.closePath();
+    ctx.fillStyle = it.c; ctx.fill();
+    ctx.strokeStyle = '#151520'; ctx.lineWidth = 2; ctx.stroke();
+    a += ang;
+  });
+  ctx.beginPath(); ctx.arc(cx,cy,ir,0,Math.PI*2); ctx.fillStyle='#fffdf0'; ctx.fill();
+  ctx.strokeStyle='#151520'; ctx.lineWidth=3; ctx.stroke();
+  ctx.fillStyle='#151520'; ctx.font='bold 20px "Microsoft YaHei"'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(total+'份', cx, cy);
+}
+
+/* ================= 3. 人格类型热力图 ================= */
+function renderTypes(recs){
+  const g = [[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+  recs.forEach(r=>{
+    const d = domIdx(r), f = formIdx(r);
+    if(d>=0 && d<=2 && f>=0 && f<=3) g[d][f]++;
+  });
+  const total = recs.length;
+  const cell = (d,f)=>`<div class="hcell" style="border-color:var(--bd); box-shadow:3px 3px 0 ${DIM_COLOR[d]}55;">
+      <div class="t" style="color:${FORM_COLOR[f]}">${esc(TYPE_NAMES[d][f])}</div>
+      <div class="n">${g[d][f]} 人 · ${fmt(pct(g[d][f],total),0)}%</div>
+    </div>`;
+  return `<div class="sec">
+    ${secTitle('③ 人格类型分布（主导维度 × 知行形态）')}
+    <div class="card">
+      <div class="heat">
+        <div class="rh" style="color:var(--muted)">维度 ＼ 形态</div>
+        ${FORM_NAMES.map(f=>`<div class="hhead" style="color:var(--ink)">${esc(f)}</div>`).join('')}
+        ${DIM_NAMES.map((dn,d)=>`
+          <div class="rh" style="color:${DIM_COLOR[d]}">${esc(dn)}</div>
+          ${[0,1,2,3].map(f=>cell(d,f)).join('')}`).join('')}
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin:12px 0 0;">横轴「形态」= 认知(C)与行动(A)高低组合；纵轴「主导维度」= 三维度中得分最高者。</p>
+    </div>
+  </div>`;
+}
+
+/* ================= 4. 因子与隐藏标签 ================= */
+function renderFactors(recs){
+  const fs = [
+    { key:'OB', name:'乐观偏见 OB', desc:'「轮不到我 / 没那么巧」的侥幸心理', color:'#fcb000' },
+    { key:'AI', name:'行动惰性 AI', desc:'「道理都懂，就是一直拖着没做」', color:'#3b66e2' },
+    { key:'HS', name:'求助羞耻 HS', desc:'「遇事自己扛，羞于求助」', color:'#e52521' },
+  ].map(o=>{ const s = factorStats(recs, o.key); return { ...o, ...s }; });
+  const tagCounts = { HS:0, OB:0, AI:0 };
+  recs.forEach(r=>{ tagKeys(r).forEach(x=>{ if(tagCounts[x]!==undefined) tagCounts[x]++; }); });
+  return `<div class="sec">
+    ${secTitle('④ 心理归因因子 & 隐藏标签')}
+    <div class="two">
+      <div class="card">
+        <div class="sec-h" style="color:var(--sea); text-shadow:none;"><span class="bar-deco"></span>三大因子（0–8）</div>
+        <div class="rows">
+          ${fs.map(f=>`
+            <div class="bar-row">
+              <div class="lbl">${esc(f.name)}</div>
+              <div class="bar-track"><div class="bar-fill" style="width:${fmt(f.m/8*100,0)}%;background:${f.color}"></div></div>
+              <div class="val">${fmt(f.m)}</div>
+            </div>
+            <div style="grid-column:2/4;font-size:12px;color:var(--muted);margin:-4px 0 4px;">${esc(f.desc)} · 高风险（≥6）占 <b>${fmt(f.hiPct,0)}%</b>（${f.hi} 人）</div>`).join('')}
+        </div>
+      </div>
+      <div class="card">
+        <div class="sec-h" style="color:var(--sea); text-shadow:none;"><span class="bar-deco"></span>隐藏标签命中</div>
+        <div class="rows">
+          ${Object.keys(TAG_NAMES).map(k=>{
+            const c = tagCounts[k];
+            return `<div class="bar-row">
+              <div class="lbl">${esc(TAG_NAMES[k])}</div>
+              <div class="bar-track"><div class="bar-fill" style="width:${fmt(pct(c,recs.length),0)}%;background:${k==='HS'?'#e52521':(k==='OB'?'#fcb000':'#3b66e2')}"></div></div>
+              <div class="val">${c} 人</div>
+            </div>`;
+          }).join('')}
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin:12px 0 0;">标签命中条件：对应因子 ≥6 分（每项最高 8 分）。</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ================= 5. 基础信息分布 ================= */
+function renderBasic(recs){
+  const withBasic = recs.filter(r=>r.basic && Object.keys(r.basic).length);
+  const mkRows = (opts, vals, color)=> opts.map(o=>{
+    const c = vals.filter(v=>v===o).length;
+    const mx = Math.max(...opts.map(x=>vals.filter(v=>v===x).length), 1);
+    return `<div class="bar-row">
+      <div class="lbl">${esc(o)}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${fmt(c/mx*100,0)}%;background:${color}"></div></div>
+      <div class="val">${c}（${fmt(pct(c,withBasic.length),0)}%）</div>
+    </div>`;
+  }).join('');
+  const multiCounts = (opts, key)=> opts.map(o=>{
+    const c = recs.filter(r=>((r.basic||{})[key]||[]).includes(o)).length;
+    const mx = Math.max(...opts.map(x=>recs.filter(r=>((r.basic||{})[key]||[]).includes(x)).length), 1);
+    return `<div class="bar-row">
+      <div class="lbl">${esc(o)}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${fmt(c/mx*100,0)}%;background:#0b6670"></div></div>
+      <div class="val">${c}（${fmt(pct(c,withBasic.length),0)}%）</div>
+    </div>`;
+  }).join('');
+  const grades = withBasic.map(r=>r.basic.grade);
+  const genders = withBasic.map(r=>r.basic.gender);
+  const majors = withBasic.map(r=>r.basic.major);
+  const hours = withBasic.map(r=>r.basic.hours);
+  const channels = withBasic.map(r=>r.basic.channel);
+  const multiList = (opts,key)=> opts.filter(o=>recs.some(r=>((r.basic||{})[key]||[]).includes(o)));
+  const expPresent = EXP_OPTS.filter(o=>recs.some(r=>((r.basic||{}).exp||[]).includes(o)));
+  const helpPresent = HELP_OPTS.filter(o=>recs.some(r=>((r.basic||{}).help||[]).includes(o)));
+  return `<div class="sec">
+    ${secTitle('⑤ 基础信息分布（已填信息的受访者）')}
+    <p style="font-size:12.5px;color:rgba(255,255,255,.9);margin:0 0 10px;">已填写基础信息 <b>${withBasic.length}</b> 人 / 共 ${recs.length} 人（跳过基础信息的作答不参与此节统计）。</p>
+    <div class="grid">
+      <div class="card"><div class="sec-h" style="color:var(--sea);text-shadow:none;"><span class="bar-deco"></span>年级</div><div class="rows">${mkRows(GRADES,grades,'#3b66e2')}</div></div>
+      <div class="card"><div class="sec-h" style="color:var(--sea);text-shadow:none;"><span class="bar-deco"></span>性别</div><div class="rows">${mkRows(GENDERS,genders,'#e52521')}</div></div>
+      <div class="card"><div class="sec-h" style="color:var(--sea);text-shadow:none;"><span class="bar-deco"></span>专业大类</div><div class="rows">${mkRows(MAJORS,majors,'#00a800')}</div></div>
+      <div class="card"><div class="sec-h" style="color:var(--sea);text-shadow:none;"><span class="bar-deco"></span>日均上网时长</div><div class="rows">${mkRows(HOURS,hours,'#fcb000')}</div></div>
+      <div class="card"><div class="sec-h" style="color:var(--sea);text-shadow:none;"><span class="bar-deco"></span>常用平台（多选）</div><div class="rows">${multiList(PLATFORMS,'platform').map(o=>{
+        const c = recs.filter(r=>((r.basic||{}).platform||[]).includes(o)).length;
+        const mx = Math.max(...PLATFORMS.map(x=>recs.filter(r=>((r.basic||{}).platform||[]).includes(x)).length),1);
+        return `<div class="bar-row"><div class="lbl">${esc(o)}</div><div class="bar-track"><div class="bar-fill" style="width:${fmt(c/mx*100,0)}%;background:#0b6670"></div></div><div class="val">${c}</div></div>`;
+      }).join('')}</div></div>
+      <div class="card"><div class="sec-h" style="color:var(--sea);text-shadow:none;"><span class="bar-deco"></span>遭遇经历（多选）</div><div class="rows">${expPresent.map(o=>{
+        const c = recs.filter(r=>((r.basic||{}).exp||[]).includes(o)).length;
+        const mx = Math.max(...expPresent.map(x=>recs.filter(r=>((r.basic||{}).exp||[]).includes(x)).length),1);
+        return `<div class="bar-row"><div class="lbl">${esc(o)}</div><div class="bar-track"><div class="bar-fill" style="width:${fmt(c/mx*100,0)}%;background:#e52521"></div></div><div class="val">${c}</div></div>`;
+      }).join('')}</div></div>
+      <div class="card"><div class="sec-h" style="color:var(--sea);text-shadow:none;"><span class="bar-deco"></span>求助对象（多选）</div><div class="rows">${helpPresent.map(o=>{
+        const c = recs.filter(r=>((r.basic||{}).help||[]).includes(o)).length;
+        const mx = Math.max(...helpPresent.map(x=>recs.filter(r=>((r.basic||{}).help||[]).includes(x)).length),1);
+        return `<div class="bar-row"><div class="lbl">${esc(o)}</div><div class="bar-track"><div class="bar-fill" style="width:${fmt(c/mx*100,0)}%;background:#3b66e2"></div></div><div class="val">${c}</div></div>`;
+      }).join('')}</div></div>
+      <div class="card"><div class="sec-h" style="color:var(--sea);text-shadow:none;"><span class="bar-deco"></span>最信任求助渠道</div><div class="rows">${mkRows(CHANNELS,channels,'#ff7a1a')}</div></div>
+    </div>
+  </div>`;
+}
+
+/* ================= 6. 交叉分析 ================= */
+function renderCross(recs){
+  const withBasic = recs.filter(r=>r.basic && Object.keys(r.basic).length);
+  /* 年级 × 形态 */
+  const gRows = GRADES.map(g=>({ g, c:[0,0,0,0], n:0 }));
+  withBasic.forEach(r=>{ const gi = GRADES.indexOf(r.basic.grade); const f = formIdx(r);
+    if(gi>=0){ gRows[gi].n++; if(f>=0 && f<=3) gRows[gi].c[f]++; } });
+  /* 性别 × 维度 */
+  const genderDim = GENDERS.map(g=>{
+    const sub = withBasic.filter(r=>r.basic.gender===g);
+    return { g, n:sub.length, dims:[0,1,2].map(d=>mean(sub.map(r=>num(recVal(r,['result','D',d]))).filter(v=>v!==null))) };
+  });
+  /* 遭遇经历 × 维度 */
+  const expDim = EXP_OPTS.map(e=>{
+    const sub = withBasic.filter(r=>(r.basic.exp||[]).includes(e));
+    return { e, n:sub.length, dims:[0,1,2].map(d=>mean(sub.map(r=>num(recVal(r,['result','D',d]))).filter(v=>v!==null))) };
+  }).filter(x=>x.n>0);
+  return `<div class="sec">
+    ${secTitle('⑥ 交叉分析')}
+    <div class="two">
+      <div class="card">
+        <div class="sec-h" style="color:var(--sea);text-shadow:none;"><span class="bar-deco"></span>年级 × 知行形态（人数）</div>
+        <table class="tbl">
+          <tr><th class="l">年级</th>${FORM_NAMES.map(f=>`<th>${esc(f)}</th>`).join('')}<th>合计</th></tr>
+          ${gRows.filter(x=>x.n>0).map(r=>`<tr><td class="l">${esc(r.g)}</td>${r.c.map(c=>`<td>${c}</td>`).join('')}<td><b>${r.n}</b></td></tr>`).join('')}
+        </table>
+      </div>
+      <div class="card">
+        <div class="sec-h" style="color:var(--sea);text-shadow:none;"><span class="bar-deco"></span>性别 × 三维度均分</div>
+        <table class="tbl">
+          <tr><th class="l">性别</th>${DIM_NAMES.map(d=>`<th>${esc(d)}</th>`).join('')}<th>人数</th></tr>
+          ${genderDim.map(r=>`<tr><td class="l">${esc(r.g)}</td>${r.dims.map(v=>`<td>${fmt(v)}</td>`).join('')}<td>${r.n}</td></tr>`).join('')}
+        </table>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px;">
+      <div class="sec-h" style="color:var(--sea);text-shadow:none;"><span class="bar-deco"></span>遭遇经历 × 三维度均分（0–8）</div>
+      <table class="tbl">
+        <tr><th class="l">是否遭遇过</th>${DIM_NAMES.map(d=>`<th>${esc(d)}</th>`).join('')}<th>人数</th></tr>
+        ${expDim.map(r=>`<tr><td class="l">${esc(r.e)}</td>${r.dims.map(v=>`<td>${fmt(v)}</td>`).join('')}<td>${r.n}</td></tr>`).join('')}
+      </table>
+      <p style="font-size:12px;color:var(--muted);margin:10px 0 0;">「都没有」指未遭遇任何上述经历；分维度比较可观察亲历者对相关风险的得分差异。</p>
+    </div>
+  </div>`;
+}
+
+/* ================= 7. 各题均分 ================= */
+function renderQuestions(recs){
+  const byPart = {};
+  QMETA.forEach(q=>{ (byPart[q.part] = byPart[q.part]||[]).push(q); });
+  const qrow = q=>{
+    const vals = recs.map(r=>num(recVal(r,['answers',q.id]))).filter(v=>v!==null);
+    const mx = q.kind==='range' ? 10 : 4;
+    const m = mean(vals);
+    return `<div class="qrow"><span class="qid">${q.id.toUpperCase()}</span>
+      <div style="min-width:0;"><div style="font-weight:700;margin-bottom:3px;">${esc(q.title)}</div>
+      <div class="qbar"><div style="width:${fmt(m/mx*100,0)}%"></div></div></div>
+      <span class="qv">${fmt(m,2)}<span style="color:var(--muted);font-weight:400">/${mx}</span></span></div>`;
+  };
+  return `<div class="sec">
+    ${secTitle('⑦ 各题均分（认知 / 行动 / 自评）')}
+    <div class="card qlist">
+      <div class="part-tag">— 个人篇（1–17 题）—</div>
+      ${byPart[1].map(qrow).join('')}
+      <div class="part-tag">— 闯关篇（18–26 题 · 当阿卷的军师）—</div>
+      ${byPart[2].map(qrow).join('')}
+    </div>
+  </div>`;
+}
+
+/* ================= 8. 自动分析报告 ================= */
+function renderReport(recs){
+  const n = recs.length;
+  const withBasic = recs.filter(r=>r.basic && Object.keys(r.basic).length);
+  const Cm = mean(recs.map(r=>num(recVal(r,['result','C']))).filter(v=>v!==null));
+  const Am = mean(recs.map(r=>num(recVal(r,['result','A']))).filter(v=>v!==null));
+  const G = Cm - Am;
+  const selfM = mean(recs.map(r=>num(recVal(r,['answers','q27']))).filter(v=>v!==null));
+  const forms = formItems(recs); const topForm = forms.slice().sort((a,b)=>b.v-a.v)[0];
+  const dims = dimsOf(recs); const topDim = dims.slice().sort((a,b)=>b.m-a.m)[0]; const lowDim = dims.slice().sort((a,b)=>a.m-b.m)[0];
+  const ob = factorStats(recs,'OB'), ai = factorStats(recs,'AI'), hs = factorStats(recs,'HS');
+  const tagAll = []; recs.forEach(r=>{ tagKeys(r).forEach(x=>tagAll.push(x)); });
+  const topTag = topFreq(tagAll);
+  const gradeDesc = topDesc(withBasic.map(r=>r.basic.grade));
+  const majorDesc = topDesc(withBasic.map(r=>r.basic.major));
+  const hoursDesc = topDesc(withBasic.map(r=>r.basic.hours));
+  const channelDesc = topDesc(withBasic.map(r=>r.basic.channel));
+  const expViolence = withBasic.filter(r=>(r.basic.exp||[]).includes('被网络暴力')).length;
+  const expLeak = withBasic.filter(r=>(r.basic.exp||[]).includes('信息泄露')).length;
+  const expRumor = withBasic.filter(r=>(r.basic.exp||[]).includes('被谣言波及')).length;
+  const expNone = withBasic.filter(r=>(r.basic.exp||[]).includes('都没有')).length;
+
+  const P = [];
+  P.push(['样本概况', `本次共收集 <b>${n}</b> 份有效作答${withBasic.length<n?`，其中 <b>${withBasic.length}</b> 份填写了基础信息（${n-withBasic.length} 份跳过）`:''}。受访者以<b>${gradeDesc?gradeDesc.names.map(esc).join('、'):'—'}</b>为主（占 ${gradeDesc?fmt(gradeDesc.pct,0):'—'}%），专业集中在<b>${majorDesc?majorDesc.names.map(esc).join('、'):'—'}</b>，日均上网时长以<b>${hoursDesc?hoursDesc.names.map(esc).join('、'):'—'}</b>居多。`]);
+  P.push(['总体防御水平', `受访者平均<b>认知得分 C = ${fmt(Cm)}</b>、<b>行动得分 A = ${fmt(Am)}</b>（满分均为 4），知行错位 <b>GAP = ${fmt(G)}</b>，自评网络安全习惯 <b>${fmt(selfM,1)}</b>/10。${
+    G>=0.5 ? `GAP 明显为正，说明群体存在典型的<b>「知行脱节」</b>：道理懂得不少，真到行动时却掉链子。` :
+    G<=-0.5 ? `GAP 为负，行动略强于认知，属于<b>「直觉防护型」</b>：嘴上说不太清，但行动上先防为敬。` :
+    `认知与行动基本一致（|GAP|≤0.5），整体知行相对统一。`
+  }${
+    Cm<2&&Am<2 ? ` 但 C、A 均低于 2，整体防护水平偏低，风险暴露较高。` :
+    Cm>=2.5&&Am>=2.5 ? ` 且 C、A 均达到 2.5 以上，整体防护水平较好。` : ''
+  }`]);
+  P.push(['知行形态', `占比最高的形态是 <b>「${esc(topForm.name)}」</b>（${fmt(pct(topForm.v,n),0)}%）。${
+    topForm.v>0 ? (['这部分受访者认知与行动高度一致，是网络防护的「稳定器」。','这一群体「道理都懂，就是手慢」，是需要行动转化干预的重点对象。','这一群体凭直觉和习惯防护，虽有效但系统性不足，可通过科普把「直觉」变成「自觉」。','这一群体风险意识薄弱，是网络风险的高暴露人群，需重点加强基础安全教育。'][FORM_NAMES.indexOf(topForm.name)]) : ''
+  }`]);
+  P.push(['维度短板', `三大风险维度中，<b>「${esc(topDim.name)}」</b>得分最高（${fmt(topDim.m)}/8），表现相对最好；<b>「${esc(lowDim.name)}」</b>得分最低（${fmt(lowDim.m)}/8），构成当前群体的<b>主要防御漏洞</b>，是后续宣传教育最值得优先补强的方向。`]);
+  P.push(['心理归因', `乐观偏见(OB) 均值 ${fmt(ob.m)}/8，高风险占 ${fmt(ob.hiPct,0)}%；行动惰性(AI) 均值 ${fmt(ai.m)}/8，高风险占 ${fmt(ai.hiPct,0)}%；求助羞耻(HS) 均值 ${fmt(hs.m)}/8，高风险占 ${fmt(hs.hiPct,0)}%。${
+    (ob.hiPct>=ai.hiPct && ob.hiPct>=hs.hiPct && ob.hiPct>0) ? `相对突出的是<b>乐观偏见</b>——相当一部分人抱有「这事轮不到我」的侥幸心理，需要在宣传中强化「风险就在身边」的具象案例。` :
+    (ai.hiPct>=hs.hiPct && ai.hiPct>0) ? `相对突出的是<b>行动惰性</b>——多数人知道该怎么做，但迟迟不动手，应提供「3 分钟就能完成」的低门槛行动清单（如开二次验证、改密码）。` :
+    (hs.hiPct>0) ? `相对突出的是<b>求助羞耻</b>——遇到麻烦倾向独自硬扛，应传递「求助不丢人」的朋辈支持氛围。` : `三大因子总体处于可控区间。`
+  }`]);
+  P.push(['隐藏标签', topTag ? `最常命中的隐藏标签是 <b>「${esc(TAG_NAMES[topTag[0]]||topTag[0])}」</b>（${topTag[1]} 人命中）。` : `暂无受访者命中隐藏标签。`]);
+  P.push(['亲历与防护', withBasic.length ? (
+    (expViolence+expLeak+expRumor)===0
+    ? `在填写基础信息的受访者中，暂无人报告曾遭遇网络暴力、信息泄露或被谣言波及（${fmt(pct(expNone,withBasic.length),0)}% 选择「都没有」）。这可能与样本量较小有关；结合公开数据，大学生群体的网络风险暴露并不罕见，仍需保持警惕。`
+    : `在填写基础信息的受访者中，<b>${fmt(pct(expViolence,withBasic.length),0)}%</b> 曾遭遇网络暴力、<b>${fmt(pct(expLeak,withBasic.length),0)}%</b> 遭遇过信息泄露、<b>${fmt(pct(expRumor,withBasic.length),0)}%</b> 被谣言波及${expNone?`，${fmt(pct(expNone,withBasic.length),0)}% 表示都未遭遇`:''}。可见网络风险并非小概率事件，亲历者占比可观，印证了开展网络素养教育的现实必要性。`
+  ) : '暂无受访者填写基础信息，遭遇经历待补充。']);
+  P.push(['求助渠道', `遇到麻烦时，受访者最信任的求助渠道是 <b>「${channelDesc?channelDesc.names.map(esc).join('、'):'—'}」</b>（占 ${channelDesc?fmt(channelDesc.pct,0):'—'}%）。结合求助羞耻(HS) 高风险占比 ${fmt(hs.hiPct,0)}%，提示仍有相当一部分人倾向独自硬扛，朋辈互助与「敢于求助」的引导值得加强。`]);
+  P.push(['课题结论与建议', `综合来看，本样本网络素养呈现「<b>${esc(topForm.name)}</b>为主、<b>${esc(lowDim.name)}</b>相对薄弱」的总体格局，主要问题集中在${
+    G>=0.5?'知行脱节与':''}${ob.hiPct>=ai.hiPct&&ob.hiPct>=hs.hiPct?'乐观偏见、':''}${ai.hiPct>ob.hiPct&&ai.hiPct>=hs.hiPct?'行动惰性、':''}${hs.hiPct>ob.hiPct&&hs.hiPct>ai.hiPct?'求助羞耻、':''}${lowDim.name}等方面。建议：（1）针对「${esc(lowDim.name)}」开展专题案例教育；（2）把安全知识转化为「${ai.hiPct>=30?'一次就能做完':'随手可做'}」的行动清单，缓解行动惰性；（3）营造「求助不丢人」的朋辈氛围，降低求助羞耻。`]);
+
+  return `<div class="sec">
+    ${secTitle('⑧ 自动分析报告（可直接用于课题）')}
+    <div class="report">
+      ${P.map(([h,b])=>`<h3><span class="tag">◆</span>${esc(h)}</h3><p>${b}</p>`).join('')}
+      <h3><span class="tag">◆</span>数据说明</h3>
+      <p style="color:var(--muted);font-size:13px;">本报告由后台根据本机作答数据自动生成，所有百分比均以对应有效样本为分母；样本量较小（N&lt;30）时结论仅供参考，正式投放后请以更大样本复核。</p>
+    </div>
+  </div>`;
+}
+
+/* ================= 导出 / 导入 / 示例 / 清空 ================= */
+function buildCSV(recs){
+  const header = ['时间','年级','性别','专业','日均上网时长','常用平台','遭遇经历','求助对象','求助渠道'];
+  QMETA.forEach(q=>header.push(q.id.toUpperCase()));
+  header.push('认知C','行动A','错位GAP','乐观偏见OB','行动惰性AI','求助羞耻HS','主导维度','知行形态','人格类型','隐藏标签','防御漏洞');
+  const lines = recs.map(rec=>{
+    const b = rec.basic||{};
+    const cells = [rec.ts, b.grade||'', b.gender||'', b.major||'', b.hours||'',
+      (b.platform||[]).join('|'), (b.exp||[]).join('|'), (b.help||[]).join('|'), b.channel||''];
+    QMETA.forEach(q=>{ const v=(rec.answers||{})[q.id]; cells.push(Array.isArray(v)?v.join('|'):(v===undefined?'':v)); });
+    const r = rec.result||{};
+    cells.push(r.C, r.A, r.GAP, r.OB, r.AI, r.HS, r.dom, r.form, r.type, (r.tags||[]).join('|'), r.weak);
+    return cells.map(c=>{ c=String(c); return /[",\n]/.test(c) ? '"'+c.replace(/"/g,'""')+'"' : c; }).join(',');
+  });
+  return '\uFEFF' + [header.join(',')].concat(lines).join('\r\n');
+}
+function download(name, content, type){
+  const blob = new Blob([content], { type: type||'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download=name; a.click();
+  URL.revokeObjectURL(url);
+}
+function genSamples(){
+  /* 与作答页 seedSamples 一致的生成逻辑（供演示） */
+  const recs = getRecords();
+  const rnd = a=>a[Math.floor(Math.random()*a.length)];
+  for(let i=0;i<20;i++){
+    const ans = {};
+    QMETA.forEach(q=>{
+      if(q.kind==='range') ans[q.id] = 2+Math.floor(Math.random()*7);
+      else ans[q.id] = Math.floor(Math.random()*5);
+    });
+    const r = computeResult(ans);
+    recs.push({
+      ts: new Date(Date.now()-i*86400000).toISOString(),
+      basic:{ grade:rnd(GRADES.slice(0,3)), gender:rnd(GENDERS.slice(0,2)), major:rnd(['理工','人文社科','经管']),
+        hours:'4–6小时', platform:['微博','B站'], exp:['都没有'],
+        help:['朋友'], channel:'朋友' },
+      answers: ans,
+      result: { C:r.C, A:r.A, GAP:r.GAP, OB:r.OB, AI:r.AI, HS:r.HS,
+        dom:DIM_NAMES[r.dom], form:FORM_NAMES[r.form], type:TYPE_NAMES[r.dom][r.form],
+        tags:r.tags.map(t=>TAG_NAMES[t]), weak:DIM_NAMES[r.weak], D:r.D }
+    });
+  }
+  setRecords(recs);
+}
+/* 与作答页一致的计分（仅用于生成示例数据） */
+function computeResult(ans){
+  const cogs=[], acts=[];
+  const dimCog=[[],[],[]], dimAct=[[],[],[]];
+  const factors = { OB:0, AI:0, HS:0 };
+  QMETA.forEach(q=>{
+    const v = ans[q.id];
+    if(typeof v!=='number') return;
+    if(q.track==='cog'){ cogs.push(v); dimCog[q.dim].push(v); }
+    else if(q.track==='act'){ acts.push(v); dimAct[q.dim].push(v); }
+    if(q.factor && factors[q.factor]!==undefined) factors[q.factor] += v;
+  });
+  const C = mean(cogs), A = mean(acts), GAP = C-A;
+  const D = [0,1,2].map(d=>mean(dimCog[d])+mean(dimAct[d]));
+  const dom = D.indexOf(Math.max(...D));
+  const weak = D.indexOf(Math.min(...D));
+  const form = (C>=2 ? (A>=2?0:1) : (A>=2?2:3));
+  const tags = [];
+  if(factors.HS>=6) tags.push('HS');
+  if(factors.OB>=6) tags.push('OB');
+  if(factors.AI>=6) tags.push('AI');
+  return { C:+C.toFixed(3), A:+A.toFixed(3), GAP:+GAP.toFixed(3), OB:factors.OB, AI:factors.AI, HS:factors.HS,
+    D:D.map(x=>+x.toFixed(2)), dom, weak, form, type:TYPE_NAMES[dom][form], tags, weakName:DIM_NAMES[weak] };
+}
+
+/* ================= 登录 / 模式切换 ================= */
+function showLogin(errMsg){
+  MODE = 'login';
+  $('#loginBox').style.display = 'block';
+  $('#sessionBar').style.display = 'none';
+  $('#toolbar').style.display = 'none';
+  $('#modeHint').style.display = 'none';
+  $('#board').innerHTML = '';
+  $('#loginErr').textContent = errMsg || '';
+}
+function enterLocal(){
+  MODE = 'local'; DATA = getRecords();
+  $('#loginBox').style.display = 'none';
+  $('#sessionBar').style.display = 'block';
+  $('#toolbar').style.display = 'flex';
+  $('#modeHint').style.display = 'block';
+  syncToolbar(); renderAll();
+}
+function enterRemote(){
+  MODE = 'remote';
+  $('#loginBox').style.display = 'none';
+  $('#sessionBar').style.display = 'block';
+  $('#toolbar').style.display = 'flex';
+  $('#modeHint').style.display = 'block';
+  syncToolbar(); renderAll();
+}
+function syncToolbar(){
+  $('#btnImport').style.display = (MODE==='local') ? '' : 'none';
+  $('#btnSample').style.display = (MODE==='local') ? '' : 'none';
+  $('#btnClear').textContent = (MODE==='remote') ? '清空线上数据' : '清空本机数据';
+  $('#modeHint').innerHTML = (MODE==='remote')
+    ? '正在查看 <b>Supabase 线上数据</b>：作答页每提交一份就会匿名写入数据库，点「⟳ 刷新数据」获取最新统计。'
+    : '正在查看<b>本机离线数据</b>（仅演示 / 调试用，与线上数据无关）。';
+  const bar = $('#sessionBar');
+  if(MODE==='remote'){
+    bar.innerHTML = '已登录 <b>'+esc(SB_EMAIL)+'</b> · 线上数据 <b>'+DATA.length+'</b> 条'
+      + ' <button class="btn ghost" id="btnLogout">退出登录</button>';
+  } else {
+    bar.innerHTML = '本地离线预览 · <b>'+DATA.length+'</b> 条'
+      + ' <button class="btn ghost" id="btnBackLogin">返回登录</button>';
+  }
+  const lo = $('#btnLogout'); if(lo) lo.addEventListener('click', ()=>{ sbLogout(); showLogin(); });
+  const bl = $('#btnBackLogin'); if(bl) bl.addEventListener('click', ()=>showLogin());
+}
+async function refresh(){
+  if(MODE==='remote' && SB_ON && SB_TOKEN){
+    try{ DATA = await sbFetchRows(); enterRemote(); }
+    catch(err){
+      if(String(err.message).includes('401')){ sbLogout(); showLogin('登录已过期，请重新登录。'); }
+      else showLogin('加载线上数据失败：'+err.message);
+    }
+  } else {
+    enterLocal();
+  }
+}
+async function doLogin(){
+  if(!SB_ON){ $('#loginErr').textContent = '尚未配置 Supabase：请先填写 config.js 中的 SUPABASE_URL 与 SUPABASE_ANON_KEY。'; return; }
+  const email = $('#loginEmail').value.trim(), pass = $('#loginPass').value;
+  if(!email || !pass){ $('#loginErr').textContent = '请输入邮箱和密码。'; return; }
+  $('#loginErr').textContent = '正在登录…'; $('#btnLogin').disabled = true;
+  try{
+    await sbLogin(email, pass);
+    DATA = await sbFetchRows();
+    enterRemote();
+  }catch(err){
+    $('#loginErr').textContent = err.message;
+  }finally{
+    $('#btnLogin').disabled = false;
+  }
+}
+async function bootstrap(){
+  if(!SB_ON){ showLogin('尚未配置 Supabase：请按教程填写 config.js 后刷新本页。也可以点「本地离线预览」查看本机数据。'); return; }
+  if(SB_TOKEN){
+    $('#loginBox').style.display = 'block';
+    $('#loginErr').textContent = '正在恢复登录…';
+    try{ DATA = await sbFetchRows(); enterRemote(); }
+    catch(err){
+      if(String(err.message).includes('401')){ sbLogout(); showLogin('登录已过期，请重新登录。'); }
+      else showLogin('加载线上数据失败：'+err.message);
+    }
+  } else {
+    showLogin();
+  }
+}
+
+/* ================= 事件绑定 ================= */
+$('#btnLogin').addEventListener('click', doLogin);
+$('#loginPass').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+$('#btnLocalPreview').addEventListener('click', enterLocal);
+$('#btnRefresh').addEventListener('click', refresh);
+$('#btnCSV').addEventListener('click', ()=>{
+  if(!DATA.length){ alert('暂无数据。'); return; }
+  download('网上冲浪段位测试_数据.csv', buildCSV(DATA), 'text/csv;charset=utf-8');
+});
+$('#btnJSON').addEventListener('click', ()=>{
+  if(!DATA.length){ alert('暂无数据。'); return; }
+  download('网上冲浪段位测试_数据.json', JSON.stringify(DATA, null, 2), 'application/json;charset=utf-8');
+});
+$('#btnImport').addEventListener('click', ()=>$('#importFile').click());
+$('#importFile').addEventListener('change', e=>{
+  const f = e.target.files[0]; if(!f) return;
+  const rd = new FileReader();
+  rd.onload = ()=>{
+    try{
+      const a = JSON.parse(rd.result);
+      if(!Array.isArray(a)) throw new Error('格式不对');
+      const cur = getRecords();
+      if(cur.length && !confirm('导入将合并（追加）到本机数据，是否继续？')) { e.target.value=''; return; }
+      setRecords(cur.concat(a));
+      DATA = getRecords(); renderAll();
+      alert('已导入 '+a.length+' 条，本机当前共 '+getRecords().length+' 条。');
+    }catch(err){ alert('导入失败：不是有效的 JSON 数组。'); }
+    e.target.value='';
+  };
+  rd.readAsText(f, 'utf-8');
+});
+$('#btnSample').addEventListener('click', ()=>{
+  genSamples(); DATA = getRecords(); renderAll();
+  alert('已生成 20 条示例数据，本机当前共 '+getRecords().length+' 条。');
+});
+$('#btnClear').addEventListener('click', async ()=>{
+  if(MODE==='remote'){
+    const n = DATA.length;
+    if(!n){ alert('线上暂无数据。'); return; }
+    if(confirm('确定清空线上全部 '+n+' 条数据？此操作不可恢复，建议先导出备份。')){
+      try{ await sbDeleteAll(); await refresh(); alert('已清空线上数据。'); }
+      catch(err){ alert('清空失败：'+err.message); }
+    }
+  } else {
+    const n = getRecords().length;
+    if(!n){ alert('已经是空的了。'); return; }
+    if(confirm('确定清空本机全部 '+n+' 条数据？此操作不可恢复，建议先导出备份。')){
+      setRecords([]); DATA = []; renderAll();
+    }
+  }
+});
+
+/* 同一源的其他页面（作答页）写入本机数据时自动刷新（仅本地模式） */
+window.addEventListener('storage', e=>{ if(e.key===KEY && MODE==='local'){ DATA=getRecords(); renderAll(); } });
+
+bootstrap();
+</script>
+</body>
+</html>
